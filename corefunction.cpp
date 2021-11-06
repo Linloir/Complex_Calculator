@@ -136,10 +136,8 @@ QMap<QString, QList<double>> VerifyDefParameters(const QString & parList, const 
             partialVar.insert(params[i], {0, 0});
         else
             throw syntaxError(ptr, 0xFFF, "Not a parameter");
+        qDebug() << "inserted:" << params[i];
         ptr += params[i].length() + 1;
-        //VerifyExpr(params[i], 0, ExprFlag::ACCEPT_VARIABLE);
-        //params[i].remove(' ');
-        //partialVar.insert(params[i], {0, 0});
 
     }
     return partialVar;
@@ -211,8 +209,6 @@ int VerifyPrefixExpr(const QString& input, int cursor, int flag, const QMap<QStr
         section = input.mid(cursor, next - cursor);
 
     //judge
-    //qDebug() << "section:" << section;
-    //qDebug() << "flag:" << flag;
     int type = VerifyType(section, partialVar);
     if((type & flag) == 0){
         //Wrong type
@@ -239,43 +235,14 @@ int VerifyPrefixExpr(const QString& input, int cursor, int flag, const QMap<QStr
 }
 
 int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QString, QList<double>> & partialVar){
-//    if(cursor == input.length()){
-//        throw syntaxError(cursor, 0xF0, "Missing input");
-//    }
-//
-//    //ignore space
-//    ignoreSpaces(input, cursor);
-//    if(cursor == input.length()){
-//        //empty expression
-//        throw syntaxError(cursor - 1, 0xFF, "Empty expression");
-//    }
-//
-//    if(input[cursor] == '('){
-//        //Indicates getting into a deeper expression
-//        cursor++;
-//        cursor = VerifyInfixExpr(input, cursor, flag, partialVar);
-//        ignoreSpaces(input, cursor);
-//        if(input[cursor] != ')'){
-//            throw syntaxError(cursor, 0xF, "Missing bracket");
-//        }
-//        else
-//            cursor++;
-//    }
-//    else{
-//        QRegularExpression numberPrefixMask("(-?[0-9])|([a-zA-Z][_a-zA-Z0-9]*)");
-//        QRegularExpressionMatch result = numberPrefixMask.match(input, cursor);
-//        if(!result.hasMatch() || result.capturedStart() != cursor || result.captured().length() == 0){
-//            //not starting with a number or a variable
-//            throw syntaxError(cursor, )
-//        }
-//    }
-//
     if(cursor == input.length()){
         throw syntaxError(cursor, 0xF0, "Missing input");
     }
 
     ignoreSpaces(input, cursor);
-    //qDebug() << "input:" << input << "cursor:" << cursor;
+    if(cursor == input.length())
+        throw syntaxError(cursor - 1, 0xF0, "Missing input");
+
     if(input[cursor] == '('){
         //situation: (<expr1>) [op] [expr2]
         cursor++;
@@ -290,23 +257,6 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
             throw syntaxError(cursor, 0xF, "Missing bracket");
         }
         cursor++;
-        //Pair for ')'
-        //int rBrac = input.indexOf(')', cursor);
-        //if(cursor == rBrac){
-        //    //Empty parameter list
-        //    throw syntaxError(cursor, 0xF1, "Empty expression");
-        //}
-        //else if(rBrac == -1){
-        //    //Missing bracket
-        //    throw syntaxError(input.length(), 0xF, "Missing bracket");
-        //}
-        //else{
-        //    //Verify inside expression
-        //    int end = VerifyInfixExpr(input, cursor, flag, partialVar);
-        //    if(end != rBrac)
-        //        throw syntaxError(cursor + end, 0x4, "redundant expression");
-        //}
-        //cursor = rBrac + 1; //cursor++;
     }
     else{
         //situation: <element> [op] [expr2]
@@ -342,20 +292,42 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
                     throw syntaxError(cursor, 0xF, "Missing bracket");
                 cursor++;
                 //Pair for ')'
-                int rBrac = input.indexOf(')', cursor);
-                if(cursor == rBrac){
-                    //Empty parameter list
-                    throw syntaxError(cursor, 0xF1, "Empty expression");
+                ignoreSpaces(input, cursor);
+                QStringList params = input.mid(cursor).split(',');
+                for(int i = 0; i < params.size(); i++){
+                    qDebug() << "-------------\ninput:" << input;
+                    int end = VerifyInfixExpr(input, cursor, flag, partialVar);
+                    qDebug() << "end:" << end;
+                    if(end == cursor)
+                        throw syntaxError(cursor, 0xF1, "Empty expression");
+                    ignoreSpaces(input, end);
+                    qDebug() << "end after space:" << end;
+                    if(end >= input.length())
+                        throw syntaxError(input.length(), 0xF, "Missing bracket");
+                    cursor = end;
+                    if(input[cursor] == ')')
+                        break;
+                    if(input[cursor] == ',')
+                        cursor++;
+                    qDebug() << "cursor:" << cursor;
                 }
-                else if(rBrac == -1){
-                    //Missing bracket
+                if(input[cursor] != ')')
                     throw syntaxError(input.length(), 0xF, "Missing bracket");
-                }
-                else{
-                    //Verify inside expression
-                    VerifyInfixParameters(input.mid(cursor, rBrac - cursor), cursor, ExprFlag::ACCEPT_ALL & (~ExprFlag::ACCEPT_FUNC), partialVar, functionPool.find(isVar.captured()).value()->Size());
-                }
-                cursor = rBrac + 1; //cursor++;
+                cursor++;
+                //int rBrac = input.indexOf(')', cursor);
+                //if(cursor == rBrac){
+                //    //Empty parameter list
+                //    throw syntaxError(cursor, 0xF1, "Empty expression");
+                //}
+                //else if(rBrac == -1){
+                //    //Missing bracket
+                //    throw syntaxError(input.length(), 0xF, "Missing bracket");
+                //}
+                //else{
+                //    //Verify inside expression
+                //    VerifyInfixParameters(input.mid(cursor, rBrac - cursor), cursor, ExprFlag::ACCEPT_ALL & (~ExprFlag::ACCEPT_FUNC), partialVar, functionPool.find(isVar.captured()).value()->Size());
+                //}
+                //cursor = rBrac + 1; //cursor++;
             }
             else if(type == Expr::OPERATOR){
                 if(operatorPool.find(isVar.captured()).value()[0] != 1){
@@ -371,7 +343,6 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
                         throw syntaxError(cursor, 0xF, "Missing bracket");
                     cursor++;
                     int end = VerifyInfixExpr(input, cursor, flag, partialVar);
-                    //qDebug() << "end:" << end;
                     if(end == cursor)
                         throw syntaxError(cursor, 0xF1, "Empty expression");
                     cursor = end;
@@ -381,22 +352,6 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
                         throw syntaxError(cursor, 0xF, "Missing bracket");
                     }
                     cursor++;
-                    //Pair for ')'
-                    //int rBrac = input.indexOf(')', cursor);
-                    //if(cursor == rBrac){
-                    //    //Empty parameter list
-                    //    throw syntaxError(cursor, 0xF1, "Empty expression");
-                    //}
-                    //else if(rBrac == -1){
-                    //    //Missing bracket
-                    //    throw syntaxError(input.length(), 0xF, "Missing bracket");
-                    //}
-                    //else{
-                    //    int end = VerifyInfixExpr(input.mid(0, rBrac), cursor, flag, partialVar);
-                    //    if(end + cursor != rBrac)
-                    //        throw syntaxError(cursor + end, 0x4, "redundant expression");
-                    //}
-                    //cursor = rBrac + 1;
                 }
             }
         }
@@ -431,103 +386,6 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
 
     //check for expression 2
     cursor = VerifyInfixExpr(input, cursor, flag, partialVar);
-    //if(input[cursor] == '('){
-    //    //situation: (<expr1>) [op] [expr2]
-    //    cursor++;
-    //    //Pair for ')'
-    //    int rBrac = input.indexOf(')', cursor);
-    //    if(cursor == rBrac){
-    //        //Empty parameter list
-    //        throw syntaxError(cursor, 0xF1, "Empty expression");
-    //    }
-    //    else if(rBrac == -1){
-    //        //Missing bracket
-    //        throw syntaxError(input.length(), 0xF, "Missing bracket");
-    //    }
-    //    else{
-    //        //Verify inside expression
-    //        int end = VerifyInfixExpr(input, cursor, flag, partialVar);
-    //        if(end != rBrac)
-    //            throw syntaxError(cursor + end, 0x4, "redundant expression");
-    //    }
-    //    cursor = rBrac + 1; //cursor++;
-    //}
-    //else{
-    //    //situation: <element> [op] [expr2]
-    //    QRegularExpression number("(-?\\d+)(\\.\\d+)?");
-    //    QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
-    //    QRegularExpressionMatch isNum;
-    //    QRegularExpressionMatch isVar;
-    //    //match for numbers
-    //    isNum = number.match(input, cursor);
-    //    isVar = variable.match(input, cursor);
-    //    if(isNum.hasMatch() && isNum.capturedStart() == cursor && isNum.capturedLength() != 0){
-    //        //situation: <number> [op] [expr2]
-    //        cursor += isNum.capturedLength();
-    //    }
-    //    else if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
-    //        //situation: <var / func> [op] [expr2]
-    //        int type = VerifyType(input.mid(cursor, isVar.capturedLength()), partialVar);
-    //        if(type == Expr::KNOWN_VARIABLE || type == Expr::UNKNOWN_VARIABLE)
-    //            cursor += isVar.capturedLength();
-    //        else if(type == Expr::UNDEFINED_VARIABLE)
-    //            throw syntaxError(cursor, 0x100, "Undefined variable");
-    //        else if(type == Expr::UNDEFINED_VARIABLE)
-    //            throw syntaxError(cursor, 0xF000001, "Unexpected input");
-    //        else if(type == Expr::FUNCTION){
-    //            //<funcName>([parameter list])
-    //            cursor += isVar.capturedLength();
-    //            if(input[cursor] != '(')
-    //                throw syntaxError(cursor, 0xF, "Missing bracket");
-    //            cursor++;
-    //            //Pair for ')'
-    //            int rBrac = input.indexOf(')', cursor);
-    //            if(cursor == rBrac){
-    //                //Empty parameter list
-    //                throw syntaxError(cursor, 0xF1, "Empty expression");
-    //            }
-    //            else if(rBrac == -1){
-    //                //Missing bracket
-    //                throw syntaxError(input.length(), 0xF, "Missing bracket");
-    //            }
-    //            else{
-    //                //Verify inside expression
-    //                VerifyInfixParameters(input.mid(cursor, rBrac - cursor), cursor, ExprFlag::ACCEPT_ALL & (~ExprFlag::ACCEPT_FUNC), partialVar, functionPool.find(isVar.captured()).value()->Size());
-    //            }
-    //            cursor = rBrac + 1; //cursor++;
-    //        }
-    //        else if(type == Expr::OPERATOR){
-    //            if(operatorPool.find(isVar.captured()).value()[0] != 1){
-    //                //if not an one dimension operator
-    //                throw syntaxError(cursor, 0xF000001, "Unexpected input");
-    //            }
-    //            else{
-    //                cursor += isVar.capturedLength();
-    //                if(input[cursor] != '(')
-    //                    throw syntaxError(cursor, 0xF, "Missing bracket");
-    //                cursor++;
-    //                //Pair for ')'
-    //                int rBrac = input.indexOf(')', cursor);
-    //                if(cursor == rBrac){
-    //                    //Empty parameter list
-    //                    throw syntaxError(cursor, 0xF1, "Empty expression");
-    //                }
-    //                else if(rBrac == -1){
-    //                    //Missing bracket
-    //                    throw syntaxError(input.length(), 0xF, "Missing bracket");
-    //                }
-    //                else{
-    //                    int end = VerifyInfixExpr(input.mid(cursor, rBrac - cursor), 0, flag, partialVar);
-    //                    if(end + cursor != rBrac)
-    //                        throw syntaxError(cursor + end, 0x4, "redundant expression");
-    //                }
-    //                cursor = rBrac + 1;
-    //            }
-    //        }
-    //    }
-    //    else
-    //        return cursor;
-    //}
 
     ignoreSpaces(input, cursor);
     return cursor;
@@ -612,7 +470,28 @@ expr* BuildExpression(const QString & input, int stat){
         return BuildPrefixExpr(input, cursor);
 }
 
-expr* BuildInfixExpr(const QString& input, int& cursor){
+expr* BuildInfixExpr(const QString& input, int& cursor, expr* lastExpr){
+    ignoreSpaces(input, cursor);
+
+    QString op;
+    if(lastExpr != nullptr){
+        if(operatorPool.contains(input[cursor])){
+            op.append(input[cursor]);
+            cursor++;
+        }
+        else{
+            QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
+            QRegularExpressionMatch isVar;
+            isVar = variable.match(input, cursor);
+            if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
+                op.append(isVar.captured().remove(' '));
+                cursor += isVar.capturedLength();
+            }
+            else
+                return lastExpr;
+        }
+    }
+
     ignoreSpaces(input, cursor);
 
     expr* expr1;
@@ -653,12 +532,14 @@ expr* BuildInfixExpr(const QString& input, int& cursor){
                 QStringList params = input.mid(cursor).split(',');
                 qDebug() << params.size();
                 for(int i = 0; i < params.size(); i++){
-                    qDebug() << "param[i]" << params[i];
-                    qDebug() << "mid" << input.mid(cursor);
                     exprList.push_back(BuildInfixExpr(input, cursor));
                     ignoreSpaces(input, cursor);
-                    cursor ++;
+                    if(input[cursor] == ')')
+                        break;
+                    if(input[cursor] == ',')
+                        cursor ++;
                 }
+                cursor++;
                 expr1 = new expr("__function__", exprList, function);
             }
             else if(type == Expr::OPERATOR){
@@ -674,36 +555,44 @@ expr* BuildInfixExpr(const QString& input, int& cursor){
         else return nullptr;
     }
 
+    //QString op;
+    //
+    //if(operatorPool.contains(input[cursor])){
+    //    op.append(input[cursor]);
+    //    cursor++;
+    //}
+    //else{
+    //    QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
+    //    QRegularExpressionMatch isVar;
+    //    isVar = variable.match(input, cursor);
+    //    if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
+    //        op.append(isVar.captured().remove(' '));
+    //        cursor += isVar.capturedLength();
+    //    }
+    //    else
+    //        return expr1;
+    //}
+
     ignoreSpaces(input, cursor);
+    expr* thisExpr;
+    if(lastExpr != nullptr){
+        QVector<expr*> exprList;
+        exprList.push_back(lastExpr);
+        exprList.push_back(expr1);
+        thisExpr = new expr(op, exprList);
+    }
+    else
+        thisExpr = expr1;
     if(cursor == input.length())
-        return expr1;
-
-    QString op;
-
-    if(operatorPool.contains(input[cursor])){
-        op.append(input[cursor]);
-        cursor++;
-    }
-    else{
-        QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
-        QRegularExpressionMatch isVar;
-        isVar = variable.match(input, cursor);
-        if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
-            op.append(isVar.captured().remove(' '));
-            cursor += isVar.capturedLength();
-        }
-        else
-            return expr1;
-    }
-
-    ignoreSpaces(input, cursor);
-    expr* expr2 = BuildInfixExpr(input, cursor);
-    QVector<expr*> exprList;
-    exprList.push_back(expr1);
-    exprList.push_back(expr2);
-
-    expr* res = new expr(op, exprList);
-    return res;
+        return thisExpr;
+    else
+        return BuildInfixExpr(input, cursor, thisExpr);
+    //QVector<expr*> exprList;
+    //exprList.push_back(expr1);
+    //exprList.push_back(expr2);
+    //
+    //expr* res = new expr(op, exprList);
+    //return res;
 }
 
 expr* BuildPrefixExpr(const QString& input, int& cursor){

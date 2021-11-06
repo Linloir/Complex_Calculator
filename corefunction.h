@@ -65,7 +65,7 @@ int VerifyType(const QString & input, const QMap<QString, QList<double>> & parti
 func* Build(const QString & input, int stat);
 func* BuildFunction(const QString & input, int stat);
 expr* BuildExpression(const QString & input, int stat);
-expr* BuildInfixExpr(const QString & input, int & cursor);
+expr* BuildInfixExpr(const QString & input, int & cursor, expr* lastExpr = nullptr);
 expr* BuildPrefixExpr(const QString & input, int & cursor);
 
 #endif // COREFUNCTION_H

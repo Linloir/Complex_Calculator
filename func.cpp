@@ -1,8 +1,16 @@
 #include "func.h"
+#include <QDebug>
 
 func::func()
 {
 
+}
+
+func::func(const func* f){
+    name = f->name;
+    partialVar = f->partialVar;
+    size = f->size;
+    expression = new expr(f->expression);
 }
 
 func::func(const QString& _name, const QVector<QString>& _var, expr* _exp):
@@ -16,9 +24,42 @@ func::func(const QString& _name, const QVector<QString>& _var, expr* _exp):
     }
 }
 
+void func::Assign(QString var, expr* exp){
+    var.remove(' ');
+    expression->Assign(var, exp);
+}
+
+void func::Assign(QVector<expr*> exprList){
+    int n = size < exprList.size() ? size : exprList.size();
+    for(int i = 0; i < n; i++){
+        QString name = QString::fromUtf8("__temp__").append(QString::asprintf("%d", i));
+        expr* temp = new expr("__variable__", name);
+        qDebug() << partialVar.keys()[i] << "->" << name;
+        expression->Assign(partialVar.keys()[i], temp);
+        delete temp;
+    }
+    for(int i = 0; i < n; i++){
+        QString name = QString::fromUtf8("__temp__").append(QString::asprintf("%d", i));
+        qDebug() << name << "->" << exprList[i]->variable;
+        expression->Assign(name, exprList[i]);
+    }
+}
+
 expr::expr()
 {
+    function = nullptr;
+}
 
+expr::expr(const expr* e){
+    constraintFlag = e->constraintFlag;
+    op = e->op;
+    for(int i = 0; i < e->exprList.size(); i++){
+        expr* newExpr = new expr(e->exprList[i]);
+        exprList.push_back(newExpr);
+    }
+    constant = e->constant;
+    variable = e->variable;
+    function = e->function;
 }
 
 expr::expr(const QString & _op, const double & _c):op(_op),constant(_c){
@@ -39,6 +80,7 @@ expr::expr(const QString & _op, const QVector<expr*> & _exprList):
     function = nullptr;
 }
 QString expr::Print(int flag){
+    qDebug() << op;
     if(flag & Stat::INFIX){
         if(op == "__constant__"){
             QString res;
@@ -67,10 +109,8 @@ QString expr::Print(int flag){
                     return res;
                 }
                 else{
-                    //function
-                    //use replace to expand the expression
                     QString res;
-                    if(operatorPool.contains(exprList[0]->Op()) && operatorPool.value(exprList[0]->Op())[1] < operatorPool.value(op)[1]){
+                    if(exprList[0]->function != nullptr || (operatorPool.contains(exprList[0]->Op()) && operatorPool.value(exprList[0]->Op())[1] < operatorPool.value(op)[1])){
                         res.append("(");
                         res.append(exprList[0]->Print(Stat::INFIX));
                         res.append(")");
@@ -78,7 +118,7 @@ QString expr::Print(int flag){
                     else
                         res.append(exprList[0]->Print(Stat::INFIX));
                     res.append(op);
-                    if(operatorPool.contains(exprList[1]->Op()) && operatorPool.value(exprList[1]->Op())[1] < operatorPool.value(op)[1]){
+                    if(exprList[0]->function != nullptr || (operatorPool.contains(exprList[1]->Op()) && operatorPool.value(exprList[1]->Op())[1] < operatorPool.value(op)[1])){
                         res.append("(");
                         res.append(exprList[1]->Print(Stat::INFIX));
                         res.append(")");
@@ -89,20 +129,62 @@ QString expr::Print(int flag){
                 }
             }
             else{
+                qDebug() << "function"<< function->Name();
+                //function
+                //use replace to expand the expression
+                func* assigned = new func(function);
+                //for(int i = 0; i < assigned->Size(); i++){
+                //    QString name = QString::fromUtf8("__temp__").append(QString::asprintf("%d", i));
+                //    expr* temp = new expr("__variable__", name);
+                //    assigned->Assign(assigned->VarName(i), temp);
+                //
+                //    delete temp;
+                //}
+                //for(int i = 0; i < assigned->Size(); i++){
+                //    QString name = QString::fromUtf8("__temp__").append(QString::asprintf("%d", i));
+                //    assigned->Assign(name, exprList[i]);
+                //}
+                assigned->Assign(exprList);
                 QString res;
-                res.append(function->Name());
-                res.append("(");
-                res.append(exprList[0]->Print(Stat::INFIX));
-                for(int i = 1; i < exprList.size(); i++){
-                    res.append(",");
-                    res.append(exprList[i]->Print(Stat::INFIX));
-                }
-                res.append(")");
+                res.append(assigned->Expr()->Print(Stat::INFIX));
+                //QString res;
+                //res.append(function->Name());
+                //res.append("(");
+                //res.append(exprList[0]->Print(Stat::INFIX));
+                //for(int i = 1; i < exprList.size(); i++){
+                //    res.append(",");
+                //    res.append(exprList[i]->Print(Stat::INFIX));
+                //}
+                //res.append(")");
                 return res;
             }
         }
     }
     else{
         return "";
+    }
+}
+
+void expr::Assign(QString var, expr *exp){
+    if(op == "__constant__")    return;
+    else if(op == "__variable__"){
+        if(variable == var){
+            op = exp->op;
+            exprList = exp->exprList;
+            constant = exp->constant;
+            variable = exp->variable;
+            function = exp->function;
+        }
+        return;
+    }
+    else if(function != nullptr){
+        func* assignedFunc = new func(function);
+        assignedFunc->Assign(var, exp);
+        function = assignedFunc;
+        return;
+    }
+    else{
+        for(int i = 0; i < exprList.size(); i++)
+            exprList[i]->Assign(var, exp);
     }
 }
