@@ -10,16 +10,32 @@ CONFIG += c++11
 
 SOURCES += \
     corefunction.cpp \
+    customhint.cpp \
+    custominputbox.cpp \
+    displayitem.cpp \
     func.cpp \
+    inputindicator.cpp \
     main.cpp \
     mainwindow.cpp \
-    myerrors.cpp
+    myerrors.cpp \
+    scrollareacustom.cpp \
+    scrollcontainer.cpp \
+    scrollindicator.cpp \
+    scrolllistcontainer.cpp
 
 HEADERS += \
     corefunction.h \
+    customhint.h \
+    custominputbox.h \
+    displayitem.h \
     func.h \
+    inputindicator.h \
     mainwindow.h \
-    myerrors.h
+    myerrors.h \
+    scrollareacustom.h \
+    scrollcontainer.h \
+    scrollindicator.h \
+    scrolllistcontainer.h
 
 FORMS += \
     mainwindow.ui

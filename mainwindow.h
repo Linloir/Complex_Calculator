@@ -2,6 +2,9 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QPainter>
+#include <QAbstractAnimation>
+#include "scrollareacustom.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -16,6 +19,10 @@ public:
     ~MainWindow();
 
 private:
+    ScrollAreaCustom* globalVar;
+    ScrollAreaCustom* globalFunc;
     Ui::MainWindow *ui;
+    void paintEvent(QPaintEvent*);
+    void InitInterface();
 };
 #endif // MAINWINDOW_H

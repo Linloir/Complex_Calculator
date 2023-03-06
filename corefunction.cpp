@@ -17,7 +17,7 @@ namespace ExprFlag {
 }
 
 namespace Expr {
-    int NUM = 0b0110101;
+    int NUM = 0b0110001;
     int KNOWN_VARIABLE = 0b0110101;
     int UNKNOWN_VARIABLE = 0b0000100;
     int UNDEFINED_VARIABLE = 0b00001000;
@@ -27,12 +27,13 @@ namespace Expr {
 }
 
 namespace Stat {
-    int UNDEFINED = 0b000000;
-    int INFIX = 0b000100;
-    int PREFIX = 0b000010;
-    int EXPR = 0b010000;
-    int EQUATION = 0b001000;
-    int EXPAND = 0b100000;
+    int UNDEFINED = 0b0000000;
+    int INFIX = 0b0000100;
+    int PREFIX = 0b0000010;
+    int EXPR = 0b0010000;
+    int EQUATION = 0b0001000;
+    int CONSTANT = 0b0100000;
+    int FUNCTION = 0b1000000;
 }
 
 void ignoreSpaces(const QString& input, int & cursor){
@@ -46,15 +47,17 @@ void InitializeOperatorPool(){
     operatorPool.insert("-", {2,0});
     operatorPool.insert("*", {2,1});
     operatorPool.insert("/", {2,1});
+    operatorPool.insert("%", {2,1});
     operatorPool.insert("^", {2,2});
     operatorPool.insert("sin", {1,3});
+    operatorPool.insert("cos", {1,3});
+    operatorPool.insert("tan", {1,3});
+    operatorPool.insert("'", {2,5});
 }
 
 void InitializeVariablePool(){
     //This function is used to initialize
-    variablePool.insert("a", {0,0});
-    variablePool.insert("b", {0,0});
-    variablePool.insert("c", {0,0});
+    variablePool.insert("PI", {1,3.14159265358});
 }
 
 void InitializeFunctionPool(){
@@ -63,12 +66,11 @@ void InitializeFunctionPool(){
 
 int QuickVerify(const QString& input, int cursor){
     int stat = Stat::UNDEFINED;
-    //qDebug() << input;
     int eqPos = input.indexOf('=');
     if(eqPos == -1){
         //Situation of one expression
         stat |= Stat::EXPR;
-        stat |= VerifyExpr(input);
+        stat |= VerifyExpr(input, 0, ExprFlag::ACCEPT_ALL);
     }
     else{
         //Situation of assignment
@@ -93,7 +95,11 @@ int QuickVerify(const QString& input, int cursor){
         if(input[cursor] == '='){
             //Expression 1 is a variable
             //verify right expression
-            stat |= VerifyExpr(input, eqPos + 1, ExprFlag::REQUIRE_NUM);
+            stat |= Stat::CONSTANT;
+            QMap<QString, QVector<double>> partialVar = variablePool;
+            if(!partialVar.contains(matchResult.captured().remove(' ')))
+                partialVar.insert(matchResult.captured().remove(' '), {0,0});
+            stat |= VerifyExpr(input, eqPos + 1, ExprFlag::ACCEPT_ALL & (~ExprFlag::ACCEPT_UNDEFINED_VARIABLE), partialVar);
         }
         else if(input[cursor] == '('){
             cursor++;
@@ -109,9 +115,18 @@ int QuickVerify(const QString& input, int cursor){
                 throw syntaxError(eqPos - 1, 0xF, "Missing bracket");
             }
             else{
+                int p = rBrac+1;
+                ignoreSpaces(input, p);
+                if(input[p] != '=')
+                    throw syntaxError(p, 0x4, "Redundant expressions");
                 //Verify parameter table and construct partial variable table
                 QMap<QString, QList<double>> partialVar = VerifyDefParameters(input.mid(cursor, rBrac - cursor), cursor);
+                for(int i = 0; i < variablePool.size(); i++){
+                    if(!partialVar.contains(variablePool.keys().at(i)))
+                        partialVar.insert(variablePool.keys().at(i), {0,0});
+                }
                 //verify right expression
+                stat |= Stat::FUNCTION;
                 stat |= VerifyExpr(input, eqPos + 1, ExprFlag::ACCEPT_ALL & (~ExprFlag::ACCEPT_UNDEFINED_VARIABLE), partialVar);
             }
         }
@@ -136,7 +151,7 @@ QMap<QString, QList<double>> VerifyDefParameters(const QString & parList, const 
             partialVar.insert(params[i], {0, 0});
         else
             throw syntaxError(ptr, 0xFFF, "Not a parameter");
-        qDebug() << "inserted:" << params[i];
+        //qDebug() << "inserted:" << params[i];
         ptr += params[i].length() + 1;
 
     }
@@ -247,7 +262,6 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
         //situation: (<expr1>) [op] [expr2]
         cursor++;
         int end = VerifyInfixExpr(input, cursor, flag, partialVar);
-        //qDebug() << "end:" << end;
         if(end == cursor)
             throw syntaxError(cursor, 0xF1, "Empty expression");
         cursor = end;
@@ -294,40 +308,28 @@ int VerifyInfixExpr(const QString & input, int cursor, int flag, const QMap<QStr
                 //Pair for ')'
                 ignoreSpaces(input, cursor);
                 QStringList params = input.mid(cursor).split(',');
-                for(int i = 0; i < params.size(); i++){
-                    qDebug() << "-------------\ninput:" << input;
+                int count = 0;
+                for(count = 0; count < params.size(); ){
                     int end = VerifyInfixExpr(input, cursor, flag, partialVar);
-                    qDebug() << "end:" << end;
                     if(end == cursor)
                         throw syntaxError(cursor, 0xF1, "Empty expression");
                     ignoreSpaces(input, end);
-                    qDebug() << "end after space:" << end;
                     if(end >= input.length())
                         throw syntaxError(input.length(), 0xF, "Missing bracket");
                     cursor = end;
+                    count++;
                     if(input[cursor] == ')')
                         break;
                     if(input[cursor] == ',')
                         cursor++;
-                    qDebug() << "cursor:" << cursor;
                 }
+                if(count < functionPool.value(isVar.captured().remove(' '))->Size())
+                    throw syntaxError(cursor, 0xB0, "Missing parameter");
+                else if(count > functionPool.value(isVar.captured().remove(' '))->Size())
+                    throw syntaxError(cursor, 0xB1, "Redundant parameter");
                 if(input[cursor] != ')')
                     throw syntaxError(input.length(), 0xF, "Missing bracket");
                 cursor++;
-                //int rBrac = input.indexOf(')', cursor);
-                //if(cursor == rBrac){
-                //    //Empty parameter list
-                //    throw syntaxError(cursor, 0xF1, "Empty expression");
-                //}
-                //else if(rBrac == -1){
-                //    //Missing bracket
-                //    throw syntaxError(input.length(), 0xF, "Missing bracket");
-                //}
-                //else{
-                //    //Verify inside expression
-                //    VerifyInfixParameters(input.mid(cursor, rBrac - cursor), cursor, ExprFlag::ACCEPT_ALL & (~ExprFlag::ACCEPT_FUNC), partialVar, functionPool.find(isVar.captured()).value()->Size());
-                //}
-                //cursor = rBrac + 1; //cursor++;
             }
             else if(type == Expr::OPERATOR){
                 if(operatorPool.find(isVar.captured()).value()[0] != 1){
@@ -397,8 +399,12 @@ int VerifyType(const QString & input, const QMap<QString, QList<double>> & parti
     QRegularExpression variable("^[a-zA-Z][_a-zA-Z0-9]*$");
     QRegularExpressionMatch result;
     result = number.match(input);
-    if(result.hasMatch() && result.captured().length() == input.length())
+    //qDebug()<<"number capt:"<< result.captured();
+    //qDebug()<<"input length"<<input.length()<<"capt length"<<result.captured().length();
+    if(result.hasMatch() && result.captured().length() == input.length()){
+        //qDebug()<<"isNum";
         return Expr::NUM;
+    }
     result = variable.match(input);
     if(result.hasMatch() && result.captured().length() == input.length()){
         if(functionPool.contains(input))
@@ -427,15 +433,52 @@ int VerifyType(const QString & input, const QMap<QString, QList<double>> & parti
 }
 
 func* Build(const QString & input, int stat){
-    func* newFunc;
+    func* newFunc = nullptr;
     if(stat & Stat::EQUATION){
-        newFunc = BuildFunction(input, stat);
-        functionPool.insert(newFunc->Name(), newFunc);
+        if(stat & Stat::FUNCTION){
+            newFunc = BuildFunction(input, stat);
+            functionPool.insert(newFunc->Name(), newFunc);
+        }
+        else{
+            newFunc = BuildConstant(input, stat);
+        }
     }
     else{
         expr* newExpr = BuildExpression(input, stat);
-        newFunc = new func("__TEMP__", variablePool.keys().toVector(), newExpr);
+        newFunc = new func("__TEMP__", variablePool.keys().toVector(), variablePool, newExpr);
     }
+    return newFunc;
+}
+
+func* BuildConstant(const QString & input, int stat){
+    QString variableName;
+    expr* expression;
+
+    //Read variable name
+    //Create regular expression for legal variable name
+    QRegularExpression varMask("\\s*[a-zA-Z]([_a-zA-Z0-9])*\\s*");
+    //capture result
+    QRegularExpressionMatch matchResult = varMask.match(input);
+    variableName = matchResult.captured().remove(' ');
+
+    expression = BuildExpression(input.mid(input.indexOf('=') + 1), stat);
+    expression->Merge(variablePool);
+
+    if(expression->Op() == "__variable__" && expression->Variable() == variableName){
+        //Definition of global variable
+        qDebug()<<"Defined" << variableName;
+        variablePool.remove(variableName);
+        variablePool.insert(variableName, {0,0});
+    }
+    else if(expression->Op() != "__constant__")
+        throw syntaxError(input.indexOf('=') + 1, 0x30, "Not a constant");
+    else{
+        variablePool.remove(variableName);
+        variablePool.insert(variableName, {1, expression->Constant()});
+        qDebug()<<"Inserted"<<variableName<<","<<expression->Constant();
+    }
+
+    func* newFunc = new func("__TEMP__", expression);
     return newFunc;
 }
 
@@ -454,11 +497,12 @@ func* BuildFunction(const QString& input, int stat){
     int s = input.indexOf('(') + 1;
     int e = input.indexOf(')', s);
     QMap<QString, QList<double>> partialVar = VerifyDefParameters(input.mid(s, e - s), s);
+    QStringList params = input.mid(s, e - s).split(',');
 
     //Read expression
     expression = BuildExpression(input.mid(input.indexOf('=') + 1), stat);
 
-    func* newFunc = new func(funcName, partialVar.keys(), expression);
+    func* newFunc = new func(funcName, params, partialVar, expression);
     return newFunc;
 }
 
@@ -470,129 +514,136 @@ expr* BuildExpression(const QString & input, int stat){
         return BuildPrefixExpr(input, cursor);
 }
 
-expr* BuildInfixExpr(const QString& input, int& cursor, expr* lastExpr){
-    ignoreSpaces(input, cursor);
-
-    QString op;
-    if(lastExpr != nullptr){
-        if(operatorPool.contains(input[cursor])){
-            op.append(input[cursor]);
+expr* BuildInfixExpr(const QString& input, int& cursor){
+    QStack<QString> opStack;
+    QStack<expr*> exprStack;
+    while(cursor != input.length()){
+        ignoreSpaces(input, cursor);
+        if(input[cursor] == '('){
+            opStack.push_back("(");
             cursor++;
+            continue;
         }
-        else{
-            QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
-            QRegularExpressionMatch isVar;
-            isVar = variable.match(input, cursor);
-            if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
-                op.append(isVar.captured().remove(' '));
-                cursor += isVar.capturedLength();
+        if(input[cursor] == ')'){
+            qDebug()<<")";
+
+            while(!opStack.isEmpty() && opStack.top() != "("){
+                QVector<expr*> exprList;
+                for(int i = 0; i < operatorPool.value(opStack.top())[0]; i++){
+                    exprList.insert(0, exprStack.pop());
+                }
+                expr* newExpr = new expr(opStack.pop(), exprList);
+                exprStack.push_back(newExpr);
             }
-            else
-                return lastExpr;
+            if(opStack.isEmpty()){
+                //no (
+                cursor++;
+                break;
+            }
+            else if(opStack.top() == "(")
+                opStack.pop();
+            cursor++;
+            continue;
         }
-    }
-
-    ignoreSpaces(input, cursor);
-
-    expr* expr1;
-    if(input[cursor] == '('){
-        //situation: (<expr1>) [op] [expr2]
-        cursor++;
-        expr1 = BuildInfixExpr(input, cursor);
-        cursor++;
-    }
-    else{
-        //situation: <element> [op] [expr2]
+        if(operatorPool.contains(input[cursor]) && cursor != 0 && input[cursor-1] != '('){
+            if(opStack.isEmpty() || !operatorPool.contains(opStack.top()) || operatorPool.value(input[cursor])[1] > operatorPool.value(opStack.top())[1])
+                opStack.push_back(input[cursor]);
+            else{
+                qDebug()<<"priority less than";
+                while(!opStack.isEmpty() && operatorPool.contains(opStack.top()) && operatorPool.value(input[cursor])[1] <= operatorPool.value(opStack.top())[1]){
+                    QVector<expr*> exprList;
+                    for(int i = 0; i < operatorPool.value(opStack.top())[0]; i++){
+                        exprList.insert(0, exprStack.pop());
+                    }
+                    expr* newExpr = new expr(opStack.pop(), exprList);
+                    exprStack.push_back(newExpr);
+                }
+                opStack.push_back(input[cursor]);
+            }
+            cursor++;
+            continue;
+        }
         QRegularExpression number("(-?\\d+)(\\.\\d+)?");
         QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
         QRegularExpressionMatch isNum;
         QRegularExpressionMatch isVar;
-        //match for numbers
         isNum = number.match(input, cursor);
         isVar = variable.match(input, cursor);
-        if(isNum.hasMatch() && isNum.capturedStart() == cursor && isNum.capturedLength() != 0){
-            //situation: <number> [op] [expr2]
-            expr1 = new expr("__constant__", isNum.captured().toDouble());
+        if(isNum.hasMatch() && isNum.capturedStart() == cursor){
+            //found number
+            expr* newExpr = new expr("__constant__", isNum.captured().toDouble());
+            exprStack.push_back(newExpr);
             cursor += isNum.capturedLength();
+            continue;
         }
-        else if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
-            //situation: <var / func> [op] [expr2]
-            int type = VerifyType(input.mid(cursor, isVar.capturedLength()));
-            if(type == Expr::KNOWN_VARIABLE || type == Expr::UNKNOWN_VARIABLE || type == Expr::UNDEFINED_VARIABLE){
-                expr1 = new expr("__variable__", isVar.captured().remove(' '));
-                cursor += isVar.capturedLength();
-            }
-            else if(type == Expr::FUNCTION){
-                //<funcName>([parameter list])
-                cursor += isVar.capturedLength();
-                ignoreSpaces(input, cursor);
-                cursor++;
-                func* function = functionPool.find(isVar.captured().remove(' ')).value();
-                QVector<expr*> exprList;
-                QStringList params = input.mid(cursor).split(',');
-                qDebug() << params.size();
-                for(int i = 0; i < params.size(); i++){
-                    exprList.push_back(BuildInfixExpr(input, cursor));
-                    ignoreSpaces(input, cursor);
-                    if(input[cursor] == ')')
-                        break;
-                    if(input[cursor] == ',')
-                        cursor ++;
+        else if(isVar.hasMatch() && isVar.capturedStart() == cursor){
+            //found variable
+            if(operatorPool.contains(isVar.captured())){
+                //operator
+                if(opStack.isEmpty() || operatorPool.value(input[cursor])[1] > operatorPool.value(opStack.top())[1])
+                    opStack.push_back(isVar.captured());
+                else{
+                    while(!opStack.isEmpty() || operatorPool.value(input[cursor])[1] <= operatorPool.value(opStack.top())[1]){
+                        QVector<expr*> exprList;
+                        for(int i = 0; i < operatorPool.value(opStack.top())[0]; i++){
+                            exprList.insert(0, exprStack.pop());
+                        }
+                        expr* newExpr = new expr(opStack.pop(), exprList);
+                        exprStack.push_back(newExpr);
+                    }
+                    opStack.push_back(isVar.captured());
                 }
-                cursor++;
-                expr1 = new expr("__function__", exprList, function);
+                cursor += isVar.capturedLength();
+                continue;
             }
-            else if(type == Expr::OPERATOR){
+            else if(functionPool.contains(isVar.captured())){
+                //function
+                func* function = functionPool.value(isVar.captured());
                 cursor += isVar.capturedLength();
                 ignoreSpaces(input, cursor);
                 cursor++;
+                ignoreSpaces(input, cursor);
                 QVector<expr*> exprList;
-                exprList.push_back(BuildInfixExpr(input, cursor));
-                expr1 = new expr(isVar.captured().remove(' '), exprList);
+                for(int i = 0; i < function->Size(); i++){
+                    if(input[cursor] == ',')
+                        cursor++;
+                    ignoreSpaces(input, cursor);
+                    expr* newExpr = BuildInfixExpr(input, cursor);
+                    qDebug()<<newExpr->Print(Stat::INFIX);
+                    ignoreSpaces(input, cursor);
+                    if(cursor == input.length()){
+                        exprList.push_back(newExpr);
+                        break;
+                    }
+                    exprList.push_back(newExpr);
+                }
+
+                func* assigned = new func(function);
+                assigned->Assign(exprList);
+                exprStack.push_back(assigned->Expr());
+                delete assigned;
+                continue;
             }
-            else return nullptr;
+            else{
+                //variable
+                expr* newExpr = new expr("__variable__", isVar.captured());
+                exprStack.push_back(newExpr);
+                cursor += isVar.capturedLength();
+                continue;
+            }
         }
-        else return nullptr;
+        else
+            break;
     }
-
-    //QString op;
-    //
-    //if(operatorPool.contains(input[cursor])){
-    //    op.append(input[cursor]);
-    //    cursor++;
-    //}
-    //else{
-    //    QRegularExpression variable("[a-zA-Z][_a-zA-Z0-9]*");
-    //    QRegularExpressionMatch isVar;
-    //    isVar = variable.match(input, cursor);
-    //    if(isVar.hasMatch() && isVar.capturedStart() == cursor && isVar.capturedLength() != 0){
-    //        op.append(isVar.captured().remove(' '));
-    //        cursor += isVar.capturedLength();
-    //    }
-    //    else
-    //        return expr1;
-    //}
-
-    ignoreSpaces(input, cursor);
-    expr* thisExpr;
-    if(lastExpr != nullptr){
+    while(!opStack.isEmpty() && operatorPool.contains(opStack.top())){
         QVector<expr*> exprList;
-        exprList.push_back(lastExpr);
-        exprList.push_back(expr1);
-        thisExpr = new expr(op, exprList);
+        for(int i = 0; i < operatorPool.value(opStack.top())[0]; i++){
+            exprList.insert(0, exprStack.pop());
+        }
+        expr* newExpr = new expr(opStack.pop(), exprList);
+        exprStack.push_back(newExpr);
     }
-    else
-        thisExpr = expr1;
-    if(cursor == input.length())
-        return thisExpr;
-    else
-        return BuildInfixExpr(input, cursor, thisExpr);
-    //QVector<expr*> exprList;
-    //exprList.push_back(expr1);
-    //exprList.push_back(expr2);
-    //
-    //expr* res = new expr(op, exprList);
-    //return res;
+    return exprStack.top();
 }
 
 expr* BuildPrefixExpr(const QString& input, int& cursor){
@@ -613,7 +664,17 @@ expr* BuildPrefixExpr(const QString& input, int& cursor){
         thisExpr = new expr("__constant__", section.toDouble());
         cursor = next;
     }
-    else if(type == Expr::KNOWN_VARIABLE || type == Expr::UNKNOWN_VARIABLE || type == Expr::UNDEFINED_VARIABLE){
+    else if(type == Expr::KNOWN_VARIABLE){
+        if(variablePool.contains(section) && variablePool.value(section)[0] == 1){
+            thisExpr = new expr("__constant__", variablePool.value(section)[1]);
+            cursor = next;
+        }
+        else{
+            thisExpr = new expr("__variable__", section);
+            cursor = next;
+        }
+    }
+    else if(type == Expr::UNKNOWN_VARIABLE || type == Expr::UNDEFINED_VARIABLE){
         thisExpr = new expr("__variable__", section);
         cursor = next;
     }
@@ -630,7 +691,11 @@ expr* BuildPrefixExpr(const QString& input, int& cursor){
         for(int i = 0; i < functionPool.find(section).value()->Size(); i++){
             exprList.push_back(BuildPrefixExpr(input, next));
         }
-        thisExpr = new expr(functionPool.find(section).value()->Name(), exprList, functionPool.find(section).value());
+        func* assigned = new func(functionPool.find(section).value());
+        assigned->Assign(exprList);
+        //thisExpr = new expr("__function__", exprList, functionPool.find(section).value());
+        thisExpr = new expr(assigned->Expr());
+        delete assigned;
         cursor = next;
     }
 
